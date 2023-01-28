@@ -209,7 +209,7 @@ def PrepareBuilding(env, root_directory, has_libcpu=False, remove_components = [
 
     exec_prefix = GetOption('exec-prefix')
     if exec_prefix:
-        os.environ['RTT_EXEC_PREFIX'] = exec_prefix
+        os.environ['RTT_CC_PREFIX'] = exec_prefix
 
     # auto change the 'RTT_EXEC_PATH' when 'rtconfig.EXEC_PATH' get failed
     if not os.path.exists(rtconfig.EXEC_PATH):
@@ -223,7 +223,7 @@ def PrepareBuilding(env, root_directory, has_libcpu=False, remove_components = [
 
     utils.ReloadModule(rtconfig) # update environment variables to rtconfig.py
 
-    # some env variables have loaded in SConsctruct Environment() before re-load rtconfig.py;
+    # some env variables have loaded in Environment() of SConstruct before re-load rtconfig.py;
     # after update rtconfig.py's variables, those env variables need to synchronize
     if exec_prefix:
         env['CC'] = rtconfig.CC
@@ -233,6 +233,12 @@ def PrepareBuilding(env, root_directory, has_libcpu=False, remove_components = [
         env['LINK'] = rtconfig.LINK
     if exec_path:
         env.PrependENVPath('PATH', rtconfig.EXEC_PATH)
+
+    if GetOption('strict-compiling'):
+        STRICT_FLAGS = ''
+        if rtconfig.PLATFORM in ['gcc']:
+            STRICT_FLAGS += ' -Werror' #-Wextra
+            env.Append(CFLAGS=STRICT_FLAGS, CXXFLAGS=STRICT_FLAGS)
 
     # add compability with Keil MDK 4.6 which changes the directory of armcc.exe
     if rtconfig.PLATFORM in ['armcc', 'armclang']:
@@ -899,6 +905,7 @@ def GenTargetProject(program = None):
         ESPIDFProject(Env, Projects)
 
 def EndBuilding(target, program = None):
+    from mkdist import MkDist, MkDist_Strip
 
     need_exit = False
 
@@ -923,24 +930,22 @@ def EndBuilding(target, program = None):
         need_exit = True
 
     BSP_ROOT = Dir('#').abspath
+
+    project_name = GetOption('project-name')
+    project_path = GetOption('project-path')
     if GetOption('make-dist') and program != None:
-        from mkdist import MkDist
-        MkDist(program, BSP_ROOT, Rtt_Root, Env)
+        MkDist(program, BSP_ROOT, Rtt_Root, Env, project_name, project_path)
+        need_exit = True
     if GetOption('make-dist-strip') and program != None:
-        from mkdist import MkDist_Strip
         MkDist_Strip(program, BSP_ROOT, Rtt_Root, Env)
         need_exit = True
     if GetOption('make-dist-ide') and program != None:
-        from mkdist import MkDist
-        project_path = GetOption('project-path')
-        project_name = GetOption('project-name')
-
+        import subprocess
         if not isinstance(project_path, str) or len(project_path) == 0 :
-            project_path = os.path.join(BSP_ROOT, 'rt-studio-project', project_name)
-            print("\nwarning : --project-path not specified, use default path: {0}.".format(project_path))
-
-        rtt_ide = {'project_path' : project_path, 'project_name' : project_name}
-        MkDist(program, BSP_ROOT, Rtt_Root, Env, rtt_ide)
+            project_path = os.path.join(BSP_ROOT, 'rt-studio-project')
+        MkDist(program, BSP_ROOT, Rtt_Root, Env, project_name, project_path)
+        child = subprocess.Popen('scons --target=eclipse --project-name=' + project_name, cwd=project_path, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+        stdout, stderr = child.communicate()
         need_exit = True
     if GetOption('cscope'):
         from cscope import CscopeDatabase
